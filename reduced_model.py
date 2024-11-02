@@ -37,6 +37,9 @@ class ReducedModel:
         p0['a_L'] = dict(value=58, units='A^2', name='', ref='Nagle 2000', ref_note='A in Table 6')
         p0['a_P'] = dict(value=7, units='A^2/amino acid', name='protein membrane area per amino acid', ref='Vazquez & Gedeon 2024')
         p0['l_P'] = dict(value=90, units='A', name='protein volume to area ratio', ref='Vazquez & Gedeon 2024')
+        p0['v_s_p'] = dict(value=0.73, units='ml/g', name='protein specific volume', ref='')
+        p0['v_s_rna'] = dict(value=0.57, units='ml/g', name='RNA specific volume', ref='')
+        p0['nu_v_n_over_v_A'] = dict(value=p0['nu']['value'] * p0['v_s_rna']['value'] * p0['mw_n']['value'] / (p0['v_s_p']['value'] * p0['mw_a']['value']))
 
         # pathway parameters
         
@@ -71,7 +74,7 @@ class ReducedModel:
     
         param['phi'] = dict(value=(0.34+0.44)/2, min=0.34, max=0.44, name='macromolecular volume fraction', ref='Bionumbers 105814')
         a_L_over_a_P = p0['a_L']['value'] / p0['a_P']['value']
-        l_P_over_l = p0['l_P']['value'] / p0['l']['value']
+        l_P_over_l = (p0['l_P']['value'] / p0['l']['value']) * (1 + p0['nu_v_n_over_v_A']['value'])
         param['a_L_over_a_P'] = dict(value=a_L_over_a_P, min=a_L_over_a_P/2, max=a_L_over_a_P*2)
         param['l_P_over_l'] = dict(value=l_P_over_l, min=l_P_over_l/2, max=l_P_over_l*2)
         
@@ -90,7 +93,7 @@ class ReducedModel:
     def restore_default_param(self):
         self.param = self.param_default.copy()
 
-    def create_scenario(self, n_realisations=1, key=None, start=None, end=None, step=None, glc_over_K=None, change_parameters={}):
+    def create_scenario(self, n_realisations=1, key=None, start=None, end=None, step=None, glc=None, change_parameters={}):
         
         for k in change_parameters.keys():
             if k in self.param :
@@ -114,7 +117,7 @@ class ReducedModel:
             if key in self.param:
                 v[key] = self.x
    
-        if key == 'glc_over_K':
+        if key == 'glc':
             lambda_inv_pts = v['K_glc'] / (v['lambda_glc'] * self.x)
             v['lambda_E'] = self.atp_yield_E /(self.atp_yield_E/v['lambda_E'] + lambda_inv_pts)
             for p in ['P', 'N', 'L']:
@@ -123,6 +126,7 @@ class ReducedModel:
                 v[f'sigma_{p}'] = ( v[f'sigma_{p}'] / v[f'lambda_{p}'] + lambda_inv_pts) * v[f'lambda_{p}']
 
         # calculations
+
         alpha_P = 1 + v['e_P'] * v['lambda_P'] / v['lambda_E']
         alpha_N = 1 + v['e_N'] * v['lambda_N'] / v['lambda_E']
         alpha_L = 1 + v['e_L'] * v['lambda_L'] / v['lambda_E']
@@ -133,6 +137,7 @@ class ReducedModel:
         beta_PN = beta_P + (v['nu'] * v['lambda_P'] / v['lambda_N']) * beta_N
         self.theta = v['a_L_over_a_P'] * v['lambda_L'] / v['lambda_P']
         self.pi_bar_A = v['l_P_over_l'] / v['phi']
+        #print(self.pi_bar_A.mean())
         self.pi_star_A = self.pi_bar_A + (self.theta * alpha_PN / alpha_L) - (beta_L / alpha_L)
         self.kappa = beta_PN - (beta_L * alpha_PN / alpha_L)
         self.Delta = self.pi_star_A**2 - (4 * self.kappa * self.theta / alpha_L)
@@ -145,8 +150,8 @@ class ReducedModel:
         self.pi_N = self.pi_P * v['nu'] * v['lambda_P'] / v['lambda_N']
         self.pi_E = (alpha_P-1) * self.pi_P + (alpha_N-1) * self.pi_N + (alpha_L-1) * self.pi_L
         self.pi_A = v['sigma_P'] * self.pi_P + v['sigma_N'] * self.pi_N + v['sigma_L'] * self.pi_L + v['sigma_E'] * self.pi_E
-    
-        self.A_P = self.pi_A / (v['a_L_over_a_P'] * (v['lambda_L'] * self.pi_L) / (v['lambda_P'] * self.pi_P) + self.pi_A )
+
+        self.A_P = self.pi_A / self.pi_bar_A
     
         # without membrane
         self.pi_P_0 = 1 / alpha_PN
@@ -249,15 +254,12 @@ class ReducedModel:
         i = 2
         j = 1
         t = 'F)'
-        #ax[i,j].fill_between(x, pi_A[0, :], pi_A[2, :], **st)
-        #ax[i,j].plot(x, pi_A[1, :], **stl)
-        #ax[i,j].set(xlabel=xlabel, ylabel=r'$\pi_A$')
         ax[i,j].fill_between(x, A_P[0, :], A_P[2, :], **st)
         ax[i,j].plot(x, A_P[1, :], **stl)
         if plot_dense_packing_line:
-            ax[i,j].plot([x.min(), x.max()], [1,1], 'k--', label='densest disk packing')
-            #ax[i,j].plot([x.min(), x.max()], [0.91,0.91], 'k--', label='densest disk packing')
-            #ax[i,j].legend(loc=plot_dense_packing_line_legend, frameon = 0, handletextpad = 0, fontsize = 14)
+            ax[i,j].plot([x.min(), x.max()], [0.77,0.77], 'k--', label='densest random packing')
+            ax[i,j].plot([x.min(), x.max()], [0.2,0.2], 'k-.', label='membrane bending')
+            ax[i,j].legend(loc=plot_dense_packing_line_legend, frameon = 0, handletextpad = 0, fontsize = 14)
         ax[i,j].set(xlabel=xlabel, ylabel=r'$A_P$')
         ax[i,j].set_title(t, x=-0.1, y=1.05)
         if xtra is not None:
@@ -285,26 +287,19 @@ fig, ax = plt.subplots()
 hist, bins = np.histogram(pi_P, bins=20)
 ax.vlines(0.5*(bins[:-1]+bins[1:]), 0, hist/m, lw=10)
 ax.set(xlabel=r'$\pi_P$', ylabel='Frequency')
-#fig, ax = plt.subplots(1,2)
-#ax[0].vlines(0.5*(bins[:-1]+bins[1:]), 0, hist/m, lw=10)
-#ax[0].set(xlabel=r'$\pi_P$', ylabel='Frequency')
-#ax[0].set_title('A)  With volume-area balance', x=0.1, y=1.05)
-#hist, bins = np.histogram(pi_P_0, bins=20)
-#ax[1].vlines(0.5*(bins[:-1]+bins[1:]), 0, hist/m, lw=10)
-#ax[1].set(xlabel=r'$\pi_P$', ylabel='Frequency')
-#ax[1].set_title('B)  Without volume-area balance', x=0.1, y=1.05)
-#plt.subplots_adjust(bottom=0, right=2, wspace=0.3)
 plt.savefig(f'{save_at}/pi_P.pdf',bbox_inches='tight', facecolor='white', edgecolor='none', dpi=300)
 
 print('pi_P_phi')
 model.create_scenario(n_realisations=10000, key='phi', start=0.00001, end=0.4, step=0.001)
 model.plot_1(key='phi', xlabel=r'$\phi$', name='pi_P_phi', xtra=r'$l$ ($\mu$m)')
 
-model.create_scenario(n_realisations=10000, key='glc_over_K', start=2, end=50, step=1)
-model.plot_1(key='glc_over_K', xlabel= r'[Glucose] ($\mu$M)', name='pi_P_glc', plot_pi_L_0_line=True, plot_dense_packing_line=True)
+print('pi_P_glc')
+model.create_scenario(n_realisations=10000, key='glc', start=2, end=50, step=1)
+model.plot_1(key='glc', xlabel= r'[Glucose] ($\mu$M)', name='pi_P_glc', plot_pi_L_0_line=True, plot_dense_packing_line=True, plot_dense_packing_line_legend='center right')
 
-model.create_scenario(n_realisations=10000, key='glc_over_K', start=2, end=50, step=0.1, change_parameters=dict(phi=dict(value=0.1, min=0.1, max=0.1)))
-model.plot_1(key='glc_over_K', xlabel= r'${\rm [Glucose]}/K_{\rm Glucose}$', name='pi_P_glc_phi=0.1', plot_pi_L_0_line=True)
+# xtra, example showing the same plot but tuning phi to a desired value
+#model.create_scenario(n_realisations=10000, key='glc', start=2, end=50, step=0.1, change_parameters=dict(phi=dict(value=0.1, min=0.1, max=0.1)))
+#model.plot_1(key='glc', xlabel= r'${\rm [Glucose]}/K_{\rm Glucose}$', name='pi_P_glc_phi=0.1', plot_pi_L_0_line=True)
 
 # oxphos
 
@@ -314,6 +309,6 @@ model.create_scenario(n_realisations=10000, key='phi', start=0.00001, end=0.4, s
 model.plot_1(key='phi', xlabel=r'$\phi$', name='pi_P_phi_oxphos', xtra=r'$l$ ($\mu$m)')
 
 print('pi_P_glc_oxphos')
-model.create_scenario(n_realisations=10000, key='glc_over_K', start=2, end=50, step=1)
-model.plot_1(key='glc_over_K', xlabel= r'[Glucose] ($\mu$M)', name='pi_P_glc_oxphos', plot_pi_L_0_line=True, plot_dense_packing_line=True)
+model.create_scenario(n_realisations=10000, key='glc', start=2, end=50, step=1)
+model.plot_1(key='glc', xlabel= r'[Glucose] ($\mu$M)', name='pi_P_glc_oxphos', plot_pi_L_0_line=True, plot_dense_packing_line=True)
 
