@@ -7,8 +7,9 @@ save_at = '/Users/avazquez/submissions/membrane_constraint.2024'
 class ReducedModel:
     """A class to explore solutions to the reduced model."""
 
-    def __init__(self, sigma_E=0, atp_yield_E = 2):
+    def __init__(self, save_at, sigma_E=0, atp_yield_E = 2):
         
+        self.save_at = save_at
         self.sigma_E = sigma_E
         self.atp_yield_E = atp_yield_E
         
@@ -271,10 +272,10 @@ class ReducedModel:
 
         plt.subplots_adjust(bottom=0, right=2, wspace=0.3, top=2, hspace=0.3)
 
-        plt.savefig(f'{save_at}/{name}.pdf',bbox_inches='tight', facecolor='white', edgecolor='none', dpi=300)
+        plt.savefig(f'{self.save_at}/{name}.pdf',bbox_inches='tight', facecolor='white', edgecolor='none', dpi=300)
 
 
-model = ReducedModel()
+model = ReducedModel(save_at=save_at)
 
 m = 10000
 model.create_scenario(n_realisations=m)
@@ -304,11 +305,10 @@ model.plot_1(key='glc', xlabel= r'[Glucose] ($\mu$M)', name='pi_P_glc', plot_pi_
 # oxphos
 
 print('pi_P_phi_oxphos')
-model = ReducedModel(sigma_E=1, atp_yield_E=26)
+model = ReducedModel(save_at=save_at, sigma_E=1, atp_yield_E=26)
 model.create_scenario(n_realisations=10000, key='phi', start=0.00001, end=0.4, step=0.001)
 model.plot_1(key='phi', xlabel=r'$\phi$', name='pi_P_phi_oxphos', xtra=r'$l$ ($\mu$m)')
 
 print('pi_P_glc_oxphos')
 model.create_scenario(n_realisations=10000, key='glc', start=2, end=50, step=1)
 model.plot_1(key='glc', xlabel= r'[Glucose] ($\mu$M)', name='pi_P_glc_oxphos', plot_pi_L_0_line=True, plot_dense_packing_line=True)
-
